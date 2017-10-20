@@ -1,0 +1,13 @@
+name: prompty
+title: Prompty
+username:
+account: shirshendu
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 226784
+bundleId: 1034600
+url: https://shirshendu.shinyapps.io/prompty/
+when: 1508411863.32255
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: ui - original.R|about/about.Rmd

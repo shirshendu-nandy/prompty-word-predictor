@@ -1,0 +1,317 @@
+---
+title: "Milestone Report for Coursera Data Science Capstone"
+author: "Shirshendu Nandy"
+date: "17 October 2017"
+output: html_document
+---
+
+This report is developed for the Week 2 assignment of Coursera Data Science Specialization's Capstone project. The project aims to create a predictive text model using three large training text data sets with Natural language processing(NLP) techniques. For this milestone report-  I've performed the following tasks:
+
+1. Download the data and have it loaded successfully.
+2. Generate a basic summary statistics about the data sets.
+3. Create a unified document corpus and perform data cleansing
+4. Exploratory analysis and report any interesting findings.
+5. Develop a plan and next steps for creating a prediction model and Shiny app.
+
+# 1. Download and load the data in R 
+
+Data is available here : https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip.
+
+```{r doc_dl, eval = FALSE}
+
+## download data
+
+fileURL <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+download.file(fileURL,destfile="Coursera-SwiftKey.zip")
+unzip(zipfile="Coursera-SwiftKey.zip")
+
+```
+
+Looking into the downloaded files, the data sets are in four languages - German (de_DE), English (en_EN), French (fi_FI) and Russian (ru_RU). In my assigment, I'll be using the English datasets. There are text data from three sources  -  blogs, news and twitter. Next step is to load these data into R objects.
+
+While the readLines function works for the blogs and twitter data, it was throwing an error for the news file. For this file, I had to employ an workaround using connections function.
+
+```{r load_docs}
+
+blogs <- readLines("./final/en_US/en_US.blogs.txt", encoding = "UTF-8", skipNul=TRUE)
+twitter <- readLines("./final/en_US/en_US.twitter.txt", encoding = "UTF-8", skipNul=TRUE)
+
+newsCon <- file("./final/en_US/en_US.news.txt", open = "rb")
+news <- readLines(newsCon, encoding = "UTF-8", skipNul=TRUE)
+close(newsCon)
+
+```
+
+# 2. Summary statistics about the data sets
+
+```{r data_summary}
+
+library(stringi)
+
+## File Sizes
+Size_MB <- round(file.info(c("./final/en_US/en_US.blogs.txt","./final/en_US/en_US.news.txt","./final/en_US/en_US.twitter.txt"))$size/1024^2) 
+
+## Number of lines per file
+Lines <- sapply(list(blogs,news,twitter), length)
+
+## Words per file
+blogs_WC <- sum(stri_count_words(blogs))
+news_WC <- sum(stri_count_words(news))
+twitter_WC <- sum(stri_count_words(twitter))
+
+## Words per line
+blogs_WpL <- mean(stri_count_words(blogs))
+news_WpL <- mean(stri_count_words(news))
+twitter_WpL <- mean(stri_count_words(twitter))
+
+# Summary 
+summary <- data.frame(
+                     file = c("blogs", "news", "twitter")
+                   , file_size_MB = Size_MB
+                   , num_lines = Lines
+                   , num_words = c(blogs_WC, news_WC, twitter_WC)
+                   , words_per_line = c(blogs_WpL, news_WpL, twitter_WpL)
+                     )
+
+library(knitr)
+kable(summary)
+
+```
+
+# 3. Data preparation
+
+As observed above, these files are quite large. For exploratory analysis, i've decided to sample 10% of these datasets and then concatenating them into one single data source for cleasing and exploration.
+
+```{r create_sample}
+
+library(tm)
+library(RWeka)
+
+set.seed(1710)
+## 1% samples
+blogsS <- sample(blogs, Lines[1]*0.1, replace = F)
+newsS  <- sample(news, Lines[2]*0.1, replace = F)
+twitterS <- sample(twitter, Lines[3]*0.1, replace = F)
+sample1 <- c(blogsS, newsS, twitterS)
+## sample length and number of words
+length(sample1); sum(stri_count_words(sample1))
+## write the sample out 
+writeLines(sample1, "./sample1.txt")
+
+# remove objects to free up memory
+rm(blogs);rm(news);rm(twitter)
+rm(blogsS);rm(newsS);rm(twitterS)
+
+```
+
+My sample data set has about 400K lines and contains nearly 10 million words. 
+
+First step is to perform some data clensing activitiy to get rid of english expletives; For removing the expletives, I've utilized a file available here : https://www.freewebheaders.com/wordpress/wp-content/uploads/full-list-of-bad-words-banned-by-google-txt-file.zip
+
+
+```{r expletives_dl, eval = FALSE}
+
+fileURL <- "https://www.freewebheaders.com/wordpress/wp-content/uploads/full-list-of-bad-words-banned-by-google-txt-file.zip"
+download.file(fileURL,destfile="full-list-of-bad-words-banned-by-google-txt-file.zip")
+unzip(zipfile="full-list-of-bad-words-banned-by-google-txt-file.zip")
+
+```
+
+```{r filter_expletives}
+
+## load the expletives
+badCon <- file("full-list-of-bad-words-banned-by-google-txt-file_2013_11_26_04_53_31_867.txt", open = "rb")
+expletives <- suppressWarnings(readLines(badCon, encoding = "UTF-8", skipNul=TRUE))
+close(badCon)
+
+# removing non-ascii characters
+expletives <-  iconv(expletives, "latin1", "ASCII", sub="")
+sample1 <-  iconv(sample1, "latin1", "ASCII", sub="")
+
+## filter out expletives from the sample
+sample1 <- removeWords(sample1,expletives)
+
+
+```
+
+Next, I've used the tm package to perform various data cleansing activities  such as removing special characters, punctuations, numbers, excess whitespace, english stopwords, performing lower case conversion. 
+
+```{r data_cleansing}
+
+# data cleansing
+
+corpus <- Corpus(VectorSource(sample1))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+#corpus <- tm_map(corpus, toSpace, "(f|ht)tp(s?)://(.*)[.][a-z]+")
+corpus <- tm_map(corpus, toSpace, "[^[:graph:]]")
+#corpus <- tm_map(corpus, toSpace, "@[^\\s]+")
+
+corpus <- tm_map(corpus, stripWhitespace)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, tolower)
+
+#corpus <- tm_map(corpus, stemDocument)
+#corpus <- tm_map(corpus, PlainTextDocument)
+
+# take out the content from the corpus
+sampleClean <- get("content", corpus)
+# save the clean sample
+save("sampleClean",file="sampleClean.Rdata")
+
+rm(sample1); rm(corpus)
+
+# load("sampleClean.Rdata")
+
+```
+
+# 4. Exploratory analysis
+
+## Word Cloud
+```{r wrd_cloud}
+library(wordcloud)
+suppressWarnings(wordcloud(sampleClean, max.words = 500, random.order = FALSE, colors=brewer.pal(9, "RdYlGn")))
+```
+
+
+
+## N-Grams
+Next, I will be calculating the n-grams,  "a contiguous sequence of n items from a given sequence of text or speech",  to see the words that occur together most frequently.
+
+Initially, I've trived using the functions available within "tm" pacakage, but was running into memory constrains. On the contrary, the "quanteda" package was quite fast and I've chosen to use this package for the n-gram generations. 
+
+## Unigrams
+
+```{r uniG}
+suppressMessages(library(quanteda))
+
+# function to create n-grams
+
+
+tokenizedDF <- function(obj, n) {
+        nGramSparse <- dfm(obj, ngrams= n, concatenator = " ")
+        nGramDF <- data.frame(Content = featnames(nGramSparse), Frequency = colSums(nGramSparse), 
+                 row.names = NULL, stringsAsFactors = FALSE)
+                }
+
+# function to plot the top 10 n-grams
+library(ggplot2)
+
+top10Plot <- function(df, title) {
+          ggplot(df[1:10,], aes(reorder(Content, Frequency), Frequency)) +
+          labs(x = "Word(s)", y = "Frequency") +
+          theme(axis.text.x = element_text(angle = 90, size = 10, hjust = 1)) + 
+          coord_flip() + 
+          ggtitle(title) +
+          geom_bar(stat = "identity", fill = I("purple4"))
+          }
+
+
+# uni-gram
+uniGram <- tokenizedDF(sampleClean, 1)
+# sorted
+uniGram <- uniGram[order(uniGram$Frequency,decreasing = TRUE),] 
+#head(uniGram,10)
+
+#plot top 10
+top10Plot(uniGram, "Top 10 unigrams")
+
+```
+
+
+## Bigrams
+
+```{r biG}
+
+biGram <- tokenizedDF(sampleClean, 2)
+#sorted
+biGram <- biGram[order(biGram$Frequency,decreasing = TRUE),] 
+#plot top 10
+top10Plot(biGram, "Top 10 bigrams")
+
+```
+
+## Trigrams
+
+```{r triG}
+
+triGram <- tokenizedDF(sampleClean, 3)
+#sorted
+triGram <- triGram[order(triGram$Frequency,decreasing = TRUE),] 
+#plot top 10
+top10Plot(triGram, "Top 10 trigrams")
+
+```
+
+## Quadgrams
+
+```{r quadG}
+quadGram <- tokenizedDF(sampleClean, 4)
+#sorted
+quadGram <- quadGram[order(quadGram$Frequency,decreasing = TRUE),] 
+#plot top 10
+top10Plot(quadGram, "Top 10 quadgrams")
+```
+
+
+# 5. Way forward
+
+
+In order to increase the efficincy of the shiny app, I think it will be a good idea to have the n-grams generated and saved prior rather than generating the n-grams in the run time which will results in bad user experience. Based on my research, "stupid Backoff" strategy seems like a good fit for developing the model i.e. to start with the quadgrams to see if there is a match with the first three words, then use the fourth word of the quadgram as the predicted word, if no match found then falling back to bigrams and so on. 
+
+For exploratory reasons, though I've taken eglish stopwords out, in the final n-grams that I plan to use for the word predictor, I won't be filtering out the stopwords.
+
+```{r saving_nGrams, echo = FALSE}
+
+#suppressWarnings(library(feather))
+# saving the n-grams
+
+biGram_split <- strsplit(as.character(biGram$Content),split=" ")
+biGram <- transform(biGram,first = sapply(biGram_split,"[[",1),second = sapply(biGram_split,"[[",2))
+# remove strings that have a frequency of 1
+biGram99 <- biGram[biGram$Frequency != 1,]
+saveRDS(biGram99,"biGram.RData")
+#write_feather(biGram, 'biGram.feather')
+
+triGram_split <- strsplit(as.character(triGram$Content),split=" ")
+triGram <- transform(triGram,first = sapply(triGram_split,"[[",1),second = sapply(triGram_split,"[[",2), third = sapply(triGram_split,"[[",3))
+# remove strings that have a frequency of 1
+triGram99 <- triGram[triGram$Frequency != 1,]
+saveRDS(triGram99,"triGram.RData")
+#write_feather(triGram, 'triGram.feather')
+
+quadGram_split <- strsplit(as.character(quadGram$Content),split=" ")
+quadGram <- transform(quadGram,first = sapply(quadGram_split,"[[",1),second = sapply(quadGram_split,"[[",2), third = sapply(quadGram_split,"[[",3), fourth = sapply(quadGram_split,"[[",4))
+# remove strings that have a frequency of 1
+quadGram99 <- quadGram[quadGram$Frequency != 1,]
+saveRDS(quadGram99,"quadGram.RData") 
+#write_feather(quadGram, 'quadGram.feather')
+
+```
+
+
+```{r session_info}
+
+sessionInfo()
+
+```
+
+
+# References
+
+Expletives List
+https://www.freewebheaders.com/wordpress/wp-content/uploads/full-list-of-bad-words-banned-by-google-txt-file.zip
+
+Introduction to the tm Package Text Mining in R
+https://cran.r-project.org/web/packages/tm/vignettes/tm.pdf
+
+quanteda: Quantitative Analysis of Textual Data
+http://pnulty.github.io/
+
+n-gram
+https://en.wikipedia.org/wiki/N-gram
+
+smoothing+backoff-1
+https://www.cs.cornell.edu/courses/CS4740/2012sp/lectures/smoothing+backoff-1-4pp.pdf

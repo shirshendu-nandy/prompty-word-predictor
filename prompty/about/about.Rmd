@@ -1,0 +1,27 @@
+---
+output: html_document
+---
+
+
+#### Prompty, the next word(s) predictor
+
+----
+
+This application is developed as part of the 'Data Science Specialisation' offered through Coursera by John Hopkins University Bloomberg School of Public Health with cooperation from Swiftkey. The application uses a training data set and utilizes natural language processing techniques to build a text predictor application.
+
+----
+
+
+#### Instructions
+
+1.	When the application is launched in your browser, under the 'Word predictor' tab, point your cursor anywhere near the horizontal line below the label that says 'Start typing below...'  and click.
+2.	The horizontal line will change colour and it's now ready to take your input. You'll see that the cursor is blinking.
+3.	Strat typing a word or a phrase. At this point, the application only support English language. 
+4.	As you type, the next word suggestion will pop under the label 'Suggested word'. This is the first choice of word based on the training data set.
+5.	At the same time, the next three best options will also be displayed under the label "Other suggestions"
+6.	If you want to try a different word or phrase, simply delete the previous text you've entered and start typing again.
+
+----
+
+If you have any feedback regarding this application, please drop me an email at shirshendu.n@gmail.com
+
